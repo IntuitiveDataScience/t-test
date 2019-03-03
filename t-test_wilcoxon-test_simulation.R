@@ -8,6 +8,7 @@
 # LOAD LIBRARIES
 ###############################################################################
 
+library(cumstats)
 library(sysfonts)
 library(xkcd)
 library(ggplot2)
@@ -60,7 +61,7 @@ sampler_factory <- function(mu, epsilon) {
 
 # Initialize matrix to store samples
 mat <- matrix(0, ncol = 2, nrow = N_SAMPLES*length(EPSILONS),
-              dimnames = list(NULL, c("epsilon", "y")))
+              dimnames = list(NULL, c("epsilon", "x")))
 
 # Store samples drawn with specified epsilon
 for (i in 1:length(EPSILONS)) {
@@ -80,9 +81,9 @@ df$epsilon <- as.factor(df$epsilon)
 fill <- "#4271AE"
 line <- "#1F3552"
 
-bp <- ggplot(df, aes(x = epsilon, y = y)) +
+bp <- ggplot(df, aes(x = epsilon, y = x)) +
   geom_boxplot(colour = "black", fill = "#56B4E9") +
-  scale_y_continuous(name = "y", breaks = seq(-40, 40, 10), limits = c(-40, 40)) +
+  scale_y_continuous(name = "x", breaks = seq(-40, 40, 10), limits = c(-40, 40)) +
   scale_x_discrete(name = "epsilon") +
   ggtitle("Boxplot of Synthetic Outlier Data") +
   theme(axis.line.x      = element_line(size = 0.5, colour = "black"),
@@ -227,6 +228,7 @@ dpp <- ggplot(df_power, aes(x = epsilon)) +
   geom_point(aes(y = diff_w_power), colour = "red") +
   scale_colour_manual(values = c("black", "red"), 
                       breaks = c("Wilcoxon Test", "Student's t-test")) +
+  geom_errorbar() +
   scale_y_continuous(name = "power", breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
   scale_x_continuous(name = "epsilon", breaks = EPSILONS, limits = range(EPSILONS)) +
   ggtitle("Power vs Epsilon") +
@@ -246,3 +248,9 @@ dpp <- ggplot(df_power, aes(x = epsilon)) +
         legend.position  = c(0.8, 0.5))
 
 dpp
+
+###############################################################################
+# CREATE ROBUSTNESS ANIMATION
+###############################################################################
+
+
