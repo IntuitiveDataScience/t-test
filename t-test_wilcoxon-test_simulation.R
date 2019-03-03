@@ -8,7 +8,6 @@
 # LOAD LIBRARIES
 ###############################################################################
 
-library(cumstats)
 library(sysfonts)
 library(xkcd)
 library(ggplot2)
@@ -25,6 +24,7 @@ N_SAMPLES    <- 2.5*10^2
 REPLICATIONS <- 1.0*10^3
 ALPHA        <- 0.05
 
+CONTROL_SD <- 1
 OUTLIER_SD <- 10
 SHIFTED_MU <- 0.25
 
@@ -111,6 +111,10 @@ same_test_power <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS
 diff_test_size  <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
 diff_test_power <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
 
+same_test_size_variance  <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
+diff_test_power_variance <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
+
+
 # Initialize progress bar
 pb <- txtProgressBar(min = 0, max = length(EPSILONS), style = 3)
 
@@ -125,6 +129,9 @@ for (i in 1:length(EPSILONS)) {
   same_incorrect_rejections    <- list(t = 0, w = 0)
   different_correct_rejections <- list(t = 0, w = 0)
   
+  # Log p-values
+  diff_p_values <- list(t = rep(0, REPLICATIONS), w = rep(0, REPLICATIONS))
+  
   # Monte Carlo simulation of hypothesis tests
   for (j in 1:REPLICATIONS) {
     
@@ -133,30 +140,34 @@ for (i in 1:length(EPSILONS)) {
     shifted_w_outliers   <- shifted_sampler(N_SAMPLES)
     
     # Run t-test
-    p_t_same      <- t.test(centered_w_outliers)$p.value
-    p_t_different <- t.test(shifted_w_outliers)$p.value
+    t_same      <- t.test(centered_w_outliers)
+    t_different <- t.test(shifted_w_outliers)
     
     # Run Wilcoxon test
-    p_w_same      <- wilcox.test(centered_w_outliers)$p.value
-    p_w_different <- wilcox.test(shifted_w_outliers)$p.value
+    w_same      <- wilcox.test(centered_w_outliers)
+    w_different <- wilcox.test(shifted_w_outliers)
+    
+    # Store p-values
+    diff_p_values$t[j] <- t_different$p.value
+    diff_p_values$w[j] <- w_different$p.value
     
     # Store t-test result for same means
-    if (p_t_same < ALPHA) {
+    if (t_same$p.value < ALPHA) {
       same_incorrect_rejections$t <- same_incorrect_rejections$t + 1
     }
     
     # Store t-test result for different means
-    if (p_t_different < ALPHA) {
+    if (t_different$p.value < ALPHA) {
       different_correct_rejections$t <- different_correct_rejections$t + 1
     }
     
     # Store Wilcoxon result for same means
-    if (p_w_same < ALPHA) {
+    if (w_same$p.value < ALPHA) {
       same_incorrect_rejections$w <- same_incorrect_rejections$w + 1
     }
     
     # Store Wilcoxon result for different means
-    if (p_w_different < ALPHA) {
+    if (w_different$p.value < ALPHA) {
       different_correct_rejections$w <- different_correct_rejections$w + 1
     }
     
@@ -169,6 +180,18 @@ for (i in 1:length(EPSILONS)) {
   # Store test power for particular epsilon
   diff_test_power$t[i] <- different_correct_rejections$t/REPLICATIONS
   diff_test_power$w[i] <- different_correct_rejections$w/REPLICATIONS
+  
+  # Store variance of size for particular epsilon
+  same_test_size_variance$t[i] <- var(c(rep(1, same_incorrect_rejections$t), 
+                                        rep(0, REPLICATIONS - same_incorrect_rejections$t)))
+  same_test_size_variance$w[i] <- var(c(rep(1, same_incorrect_rejections$w), 
+                                        rep(0, REPLICATIONS - same_incorrect_rejections$w)))
+  
+  # Store variance of power for particular epsilon
+  diff_test_power_variance$t[i] <- var(c(rep(1, different_correct_rejections$t), 
+                                         rep(0, REPLICATIONS - different_correct_rejections$t)))
+  diff_test_power_variance$w[i] <- var(c(rep(1, different_correct_rejections$w), 
+                                         rep(0, REPLICATIONS - different_correct_rejections$w)))
   
   # Update progress bar
   setTxtProgressBar(pb, i)
@@ -193,6 +216,7 @@ dtp <- ggplot(df_size, aes(x = epsilon)) +
   geom_point(aes(y = same_w_size), colour = "red") +
   scale_colour_manual(values = c("black", "red"), 
                       breaks = c("Wilcoxon Test", "Student's t-test")) +
+  geom_errorbar(aes(ymin=9.5, ymax=10.5)) +
   scale_y_continuous(name = "type i error rate", breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
   scale_x_continuous(name = "epsilon", breaks = EPSILONS, limits = range(EPSILONS)) +
   ggtitle("Type I Error Rate vs Epsilon") +
@@ -209,7 +233,7 @@ dtp <- ggplot(df_size, aes(x = epsilon)) +
         axis.text.y      = element_text(colour = "black", size = 12),
         legend.title     = element_blank(),
         legend.text      = element_text(size = 16, family = "xkcd"),
-        legend.position  = c(0.8, 0.55))
+        legend.position  = c(0.8, 0.5))
 
 dtp
 
@@ -228,7 +252,6 @@ dpp <- ggplot(df_power, aes(x = epsilon)) +
   geom_point(aes(y = diff_w_power), colour = "red") +
   scale_colour_manual(values = c("black", "red"), 
                       breaks = c("Wilcoxon Test", "Student's t-test")) +
-  geom_errorbar() +
   scale_y_continuous(name = "power", breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
   scale_x_continuous(name = "epsilon", breaks = EPSILONS, limits = range(EPSILONS)) +
   ggtitle("Power vs Epsilon") +
