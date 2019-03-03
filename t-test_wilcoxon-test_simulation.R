@@ -11,6 +11,7 @@
 library(sysfonts)
 library(xkcd)
 library(ggplot2)
+library(animation)
 
 ###############################################################################
 # DEFINE SIMULATION PARAMETERS
@@ -19,11 +20,10 @@ library(ggplot2)
 set.seed(20190303)
 
 EPSILONS     <- seq(from = 0, to = 0.20, by = 0.025)
-N_SAMPLES    <- 5*10^2
-REPLICATIONS <- 1*10^3
+N_SAMPLES    <- 2.5*10^2
+REPLICATIONS <- 1.0*10^3
 ALPHA        <- 0.05
 
-CONTROL_SD <- 1
 OUTLIER_SD <- 10
 SHIFTED_MU <- 0.25
 
@@ -103,8 +103,6 @@ bp
 # RUN HYPOTHESIS TESTS
 ###############################################################################
 
-# TODO(mike): wrap entire thing in for loop to generate error bars
-
 # Store test results from Monte Carlo simulation
 same_test_size  <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
 same_test_power <- list(t = rep(0, length(EPSILONS)), w = rep(0, length(EPSILONS)))
@@ -119,59 +117,46 @@ pb <- txtProgressBar(min = 0, max = length(EPSILONS), style = 3)
 for (i in 1:length(EPSILONS)) {
   
   # Build samplers
-  null_sampler    <- sampler_factory(mu = 0, epsilon = 0)
   center_sampler  <- sampler_factory(mu = 0, epsilon = EPSILONS[i])
   shifted_sampler <- sampler_factory(mu = SHIFTED_MU, epsilon = EPSILONS[i])
   
   # Log correct and incorrect rejections
-  same_correct_rejections   <- list(t = 0, w = 0)
-  same_incorrect_rejections <- list(t = 0, w = 0)
-  
-  different_correct_rejections   <- list(t = 0, w = 0)
-  different_incorrect_rejections <- list(t = 0, w = 0)
+  same_incorrect_rejections    <- list(t = 0, w = 0)
+  different_correct_rejections <- list(t = 0, w = 0)
   
   # Monte Carlo simulation of hypothesis tests
   for (j in 1:REPLICATIONS) {
     
     # Generate samples
-    centered_no_outliers <- null_sampler(N_SAMPLES)
     centered_w_outliers  <- center_sampler(N_SAMPLES)
     shifted_w_outliers   <- shifted_sampler(N_SAMPLES)
     
     # Run t-test
-    p_t_same      <- t.test(centered_no_outliers, centered_w_outliers)$p.value
-    p_t_different <- t.test(centered_w_outliers, shifted_w_outliers)$p.value
+    p_t_same      <- t.test(centered_w_outliers)$p.value
+    p_t_different <- t.test(shifted_w_outliers)$p.value
     
     # Run Wilcoxon test
-    p_w_same      <- wilcox.test(centered_no_outliers, centered_w_outliers)$p.value
-    p_w_different <- wilcox.test(centered_w_outliers, shifted_w_outliers)$p.value
+    p_w_same      <- wilcox.test(centered_w_outliers)$p.value
+    p_w_different <- wilcox.test(shifted_w_outliers)$p.value
     
     # Store t-test result for same means
     if (p_t_same < ALPHA) {
       same_incorrect_rejections$t <- same_incorrect_rejections$t + 1
-    } else {
-      same_correct_rejections$t <- same_correct_rejections$t + 1
     }
     
     # Store t-test result for different means
     if (p_t_different < ALPHA) {
       different_correct_rejections$t <- different_correct_rejections$t + 1
-    } else {
-      different_incorrect_rejections$t <- different_incorrect_rejections$t + 1
     }
     
     # Store Wilcoxon result for same means
     if (p_w_same < ALPHA) {
       same_incorrect_rejections$w <- same_incorrect_rejections$w + 1
-    } else {
-      same_correct_rejections$w <- same_correct_rejections$w + 1
     }
     
     # Store Wilcoxon result for different means
     if (p_w_different < ALPHA) {
       different_correct_rejections$w <- different_correct_rejections$w + 1
-    } else {
-      different_incorrect_rejections$w <- different_incorrect_rejections$w + 1
     }
     
   }
@@ -180,14 +165,7 @@ for (i in 1:length(EPSILONS)) {
   same_test_size$t[i] <- same_incorrect_rejections$t/REPLICATIONS
   same_test_size$w[i] <- same_incorrect_rejections$w/REPLICATIONS
   
-  diff_test_size$t[i] <- different_incorrect_rejections$t/REPLICATIONS
-  diff_test_size$w[i] <- different_incorrect_rejections$w/REPLICATIONS
-  
-  
   # Store test power for particular epsilon
-  same_test_power$t[i] <- same_correct_rejections$t/REPLICATIONS
-  same_test_power$w[i] <- same_correct_rejections$w/REPLICATIONS
-  
   diff_test_power$t[i] <- different_correct_rejections$t/REPLICATIONS
   diff_test_power$w[i] <- different_correct_rejections$w/REPLICATIONS
   
@@ -200,27 +178,46 @@ for (i in 1:length(EPSILONS)) {
 close(pb)
 
 ###############################################################################
-# PLOT SIZE = P(P < ALPHA) VS EPSILON
+# PLOT TYPE I ERROR RATE VS EPSILON
 ###############################################################################
 
 df_size <- data.frame(epsilon     = EPSILONS,
-                      #same_t_size = same_test_size$t,
-                      diff_t_size = diff_test_size$t,
-                      #same_w_size = same_test_size$w,
-                      diff_t_size = diff_test_size$w)
+                      same_t_size = same_test_size$t,
+                      same_w_size = same_test_size$w)
 
-ssp
+dtp <- ggplot(df_size, aes(x = epsilon)) +
+  geom_line(aes(y = same_t_size, colour = "Student's t-test")) +
+  geom_point(aes(y = same_t_size), colour = "black") +
+  geom_line(aes(y = same_w_size, colour = "Wilcoxon Test")) +
+  geom_point(aes(y = same_w_size), colour = "red") +
+  scale_colour_manual(values = c("black", "red"), 
+                      breaks = c("Wilcoxon Test", "Student's t-test")) +
+  scale_y_continuous(name = "type i error rate", breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
+  scale_x_continuous(name = "epsilon", breaks = EPSILONS, limits = range(EPSILONS)) +
+  ggtitle("Type I Error Rate vs Epsilon") +
+  theme(axis.line.x      = element_line(size = 0.5, colour = "black"),
+        axis.line.y      = element_line(size = 0.5, colour = "black"),
+        axis.line        = element_line(size=1, colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border     = element_blank(),
+        panel.background = element_blank(),
+        plot.title       = element_text(size = 20, family = "xkcd", hjust = 0.5),
+        text             = element_text(size = 16, family = "xkcd"),
+        axis.text.x      = element_text(colour = "black", size = 12),
+        axis.text.y      = element_text(colour = "black", size = 12),
+        legend.title     = element_blank(),
+        legend.text      = element_text(size = 16, family = "xkcd"),
+        legend.position  = c(0.8, 0.55))
 
-dsp
+dtp
 
 ###############################################################################
 # PLOT POWER VS EPSILON
 ###############################################################################
 
 df_power <- data.frame(epsilon      = EPSILONS,
-                       #same_t_power = same_test_power$t,
                        diff_t_power = diff_test_power$t,
-                       #same_w_power = same_test_power$w,
                        diff_w_power = diff_test_power$w)
 
 dpp <- ggplot(df_power, aes(x = epsilon)) +
@@ -232,7 +229,7 @@ dpp <- ggplot(df_power, aes(x = epsilon)) +
                       breaks = c("Wilcoxon Test", "Student's t-test")) +
   scale_y_continuous(name = "power", breaks = seq(0, 1, 0.2), limits = c(0, 1)) +
   scale_x_continuous(name = "epsilon", breaks = EPSILONS, limits = range(EPSILONS)) +
-  ggtitle("Test Power vs Epsilon") +
+  ggtitle("Power vs Epsilon") +
   theme(axis.line.x      = element_line(size = 0.5, colour = "black"),
         axis.line.y      = element_line(size = 0.5, colour = "black"),
         axis.line        = element_line(size=1, colour = "black"),
